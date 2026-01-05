@@ -1,0 +1,22 @@
+{
+  "western_modern": {
+    "minimalist_white": "Clean white background, minimalist, professional product photography, studio lighting, high quality, sharp focus",
+    "modern_home": "Modern home interior, contemporary furniture, soft natural lighting, clean environment, professional photography",
+    "business_environment": "Professional office environment, clean desk setup, natural lighting, business aesthetic",
+    "natural_light": "Outdoor natural light, clean environment, professional photography, soft shadows, high quality",
+    "luxury_lifestyle": "Luxury lifestyle setting, premium materials, sophisticated lighting, high-end aesthetic"
+  },
+  "ecommerce_specific": {
+    "amazon_standard": "Amazon marketplace standard, white background, product centered, professional lighting, clean composition",
+    "tiktok_style": "Vibrant colors, eye-catching background, social media ready, trendy aesthetic",
+    "instagram_lifestyle": "Instagram lifestyle aesthetic, modern lifestyle, social media ready, engaging composition",
+    "shopify_banner": "E-commerce banner style, brand-friendly background, conversion optimized",
+    "ebay_professional": "Professional e-commerce background, trustworthy appearance, clean design"
+  },
+  "style_modifiers": {
+    "lighting": ["soft lighting", "natural lighting", "professional studio lighting", "dramatic lighting"],
+    "mood": ["professional", "casual", "luxury", "modern", "vintage"],
+    "composition": ["centered", "rule of thirds", "minimalist", "detailed"],
+    "quality": ["high resolution", "crisp details", "professional grade", "sharp focus"]
+  }
+}

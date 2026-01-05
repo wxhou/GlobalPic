@@ -1,0 +1,1 @@
+# GlobalPic Backend Application
