@@ -45,6 +45,7 @@ class Image(Base):
     
     # 关系
     user = relationship("User", back_populates="images")
+    processing_jobs = relationship("ProcessingJob", back_populates="image")
     
     def __repr__(self):
         return f"<Image(id={self.id}, filename='{self.filename}')>"
@@ -77,7 +78,7 @@ class ProcessingJob(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # 关系
-    image = relationship("Image")
+    image = relationship("Image", back_populates="processing_jobs")
     user = relationship("User")
     
     def __repr__(self):

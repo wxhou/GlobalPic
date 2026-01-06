@@ -1,0 +1,226 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from pydantic import BaseModel
+
+from app.core.database import get_db
+from app.api.v1.auth import get_current_user
+from app.models.user import User
+from app.services.payment_service import payment_service, api_key_service
+
+router = APIRouter()
+
+
+class PlanResponse(BaseModel):
+    """套餐响应"""
+    id: str
+    name: str
+    price_monthly: int
+    price_yearly: int
+    images_per_month: str
+    features: List[str]
+
+
+class CreditPackageResponse(BaseModel):
+    """额度包响应"""
+    credits: int
+    price: float
+    name: str
+
+
+class CheckoutRequest(BaseModel):
+    """Checkout请求"""
+    plan_id: str
+    mode: str = "subscription"
+
+
+class CreditCheckoutRequest(BaseModel):
+    """额度Checkout请求"""
+    package_index: int = 0
+
+
+class SubscriptionStatusResponse(BaseModel):
+    """订阅状态响应"""
+    user_id: int
+    plan: str
+    status: str
+    images_used: int
+    images_limit: str
+    credits_remaining: int
+    subscription_end: Optional[str] = None
+
+
+class APIKeyCreateRequest(BaseModel):
+    """API密钥创建请求"""
+    name: str
+    ip_whitelist: Optional[List[str]] = None
+    rate_limit: int = 100
+
+
+class APIKeyResponse(BaseModel):
+    """API密钥响应"""
+    api_key: str
+    key_id: str
+    name: str
+    rate_limit: int
+    ip_whitelist: List[str]
+
+
+@router.get("/plans", response_model=List[PlanResponse])
+async def get_subscription_plans():
+    """获取订阅套餐列表"""
+    plans = await payment_service.get_plans()
+    return plans
+
+
+@router.get("/credits", response_model=List[CreditPackageResponse])
+async def get_credit_packages():
+    """获取按需付费套餐"""
+    packages = await payment_service.get_credit_packages()
+    return packages
+
+
+@router.post("/create-checkout")
+async def create_subscription_checkout(
+    request: CheckoutRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """创建订阅Checkout会话"""
+    if request.plan_id not in ["personal", "enterprise"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的套餐ID"
+        )
+
+    result = await payment_service.create_checkout_session(
+        user_id=current_user.id,
+        user_email=current_user.email,
+        plan_id=request.plan_id,
+        mode=request.mode,
+    )
+
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("error", "创建Checkout失败")
+        )
+
+
+@router.post("/create-credit-checkout")
+async def create_credit_checkout(
+    request: CreditCheckoutRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """创建额度购买Checkout会话"""
+    if request.package_index < 0 or request.package_index > 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的套餐索引"
+        )
+
+    result = await payment_service.create_credit_checkout(
+        user_id=current_user.id,
+        user_email=current_user.email,
+        package_index=request.package_index,
+    )
+
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("error", "创建Checkout失败")
+        )
+
+
+@router.get("/status", response_model=SubscriptionStatusResponse)
+async def get_subscription_status(
+    current_user: User = Depends(get_current_user)
+):
+    """获取当前订阅状态"""
+    status_info = await payment_service.check_subscription_status(current_user.id)
+    return SubscriptionStatusResponse(**status_info)
+
+
+@router.post("/cancel")
+async def cancel_subscription(
+    current_user: User = Depends(get_current_user)
+):
+    """取消订阅"""
+    result = await payment_service.cancel_subscription(current_user.id)
+    return result
+
+
+@router.post("/webhook")
+async def handle_payment_webhook(request: Request):
+    """处理支付Webhook"""
+    signature = request.headers.get("stripe-signature")
+    if not signature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="缺少stripe-signature头"
+        )
+
+    payload = await request.body()
+    result = await payment_service.handle_webhook(payload, signature)
+
+    return result
+
+
+# API密钥管理
+@router.post("/api-keys", response_model=APIKeyResponse)
+async def create_api_key(
+    request: APIKeyCreateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """创建API密钥"""
+    result = await api_key_service.create_api_key(
+        user_id=current_user.id,
+        name=request.name,
+        ip_whitelist=request.ip_whitelist,
+        rate_limit=request.rate_limit,
+    )
+
+    if result["success"]:
+        return APIKeyResponse(**result)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建API密钥失败"
+        )
+
+
+@router.get("/api-keys")
+async def list_api_keys(
+    current_user: User = Depends(get_current_user)
+):
+    """获取当前用户的API密钥列表"""
+    # TODO: 从数据库获取密钥列表
+    return {"keys": [], "message": "请前往设置页面管理API密钥"}
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """撤销API密钥"""
+    success = await api_key_service.revoke_api_key(key_id, current_user.id)
+    if success:
+        return {"success": True, "message": "API密钥已撤销"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="撤销API密钥失败"
+        )
+
+
+@router.get("/payment/status")
+async def get_payment_service_status():
+    """获取支付服务状态"""
+    return {
+        "payment_service": payment_service.get_status(),
+        "api_key_service": api_key_service.get_status(),
+    }
