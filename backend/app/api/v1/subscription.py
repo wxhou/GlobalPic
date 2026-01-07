@@ -66,21 +66,26 @@ class APIKeyResponse(BaseModel):
     ip_whitelist: List[str]
 
 
-@router.get("/plans", response_model=List[PlanResponse])
+class KeyIdRequest(BaseModel):
+    """密钥ID请求"""
+    key_id: str
+
+
+@router.get("/subscription/plans", response_model=List[PlanResponse])
 async def get_subscription_plans():
     """获取订阅套餐列表"""
     plans = await payment_service.get_plans()
     return plans
 
 
-@router.get("/credits", response_model=List[CreditPackageResponse])
+@router.get("/subscription/credits", response_model=List[CreditPackageResponse])
 async def get_credit_packages():
     """获取按需付费套餐"""
     packages = await payment_service.get_credit_packages()
     return packages
 
 
-@router.post("/create-checkout")
+@router.post("/subscription/create-checkout")
 async def create_subscription_checkout(
     request: CheckoutRequest,
     current_user: User = Depends(get_current_user)
@@ -108,7 +113,7 @@ async def create_subscription_checkout(
         )
 
 
-@router.post("/create-credit-checkout")
+@router.post("/subscription/create-credit-checkout")
 async def create_credit_checkout(
     request: CreditCheckoutRequest,
     current_user: User = Depends(get_current_user)
@@ -135,7 +140,7 @@ async def create_credit_checkout(
         )
 
 
-@router.get("/status", response_model=SubscriptionStatusResponse)
+@router.get("/subscription/status", response_model=SubscriptionStatusResponse)
 async def get_subscription_status(
     current_user: User = Depends(get_current_user)
 ):
@@ -144,7 +149,7 @@ async def get_subscription_status(
     return SubscriptionStatusResponse(**status_info)
 
 
-@router.post("/cancel")
+@router.post("/subscription/cancel")
 async def cancel_subscription(
     current_user: User = Depends(get_current_user)
 ):
@@ -153,7 +158,7 @@ async def cancel_subscription(
     return result
 
 
-@router.post("/webhook")
+@router.post("/subscription/webhook")
 async def handle_payment_webhook(request: Request):
     """处理支付Webhook"""
     signature = request.headers.get("stripe-signature")
@@ -170,7 +175,7 @@ async def handle_payment_webhook(request: Request):
 
 
 # API密钥管理
-@router.post("/api-keys", response_model=APIKeyResponse)
+@router.post("/subscription/api-keys", response_model=APIKeyResponse)
 async def create_api_key(
     request: APIKeyCreateRequest,
     current_user: User = Depends(get_current_user)
@@ -192,7 +197,7 @@ async def create_api_key(
         )
 
 
-@router.get("/api-keys")
+@router.get("/subscription/api-keys")
 async def list_api_keys(
     current_user: User = Depends(get_current_user)
 ):
@@ -201,13 +206,13 @@ async def list_api_keys(
     return {"keys": [], "message": "请前往设置页面管理API密钥"}
 
 
-@router.delete("/api-keys/{key_id}")
+@router.post("/subscription/api-keys/revoke")
 async def revoke_api_key(
-    key_id: str,
+    request: KeyIdRequest,
     current_user: User = Depends(get_current_user)
 ):
     """撤销API密钥"""
-    success = await api_key_service.revoke_api_key(key_id, current_user.id)
+    success = await api_key_service.revoke_api_key(request.key_id, current_user.id)
     if success:
         return {"success": True, "message": "API密钥已撤销"}
     else:
@@ -217,7 +222,7 @@ async def revoke_api_key(
         )
 
 
-@router.get("/payment/status")
+@router.get("/subscription/payment/status")
 async def get_payment_service_status():
     """获取支付服务状态"""
     return {

@@ -3,10 +3,9 @@ import api from './auth'
 // 批量处理相关API
 
 export interface BatchCreateRequest {
-  image_ids: number[]
+  images: Array<{ image: string; filename?: string }>
   operations: string[]
   style_id?: string
-  parameters?: Record<string, unknown>
 }
 
 export interface BatchTaskStatus {
@@ -16,19 +15,30 @@ export interface BatchTaskStatus {
   total_images: number
   processed_images: number
   failed_images: number
+  success_count: number
   estimated_time_remaining?: number
-  created_at: string
-  updated_at: string
+  created_at?: string
+  completed_at?: string
 }
 
 export interface BatchResult {
-  image_id: number
-  original_filename: string
+  task_id: string
+  status: string
   results: Array<{
-    operation_type: string
-    output_urls: string[]
-    quality_score: number
+    image_id: number
+    original_filename: string
+    operation_results: Array<{
+      operation_type: string
+      output_urls: string[]
+      quality_score: number
+    }>
   }>
+  errors: Array<{
+    image_id: number
+    error: string
+  }>
+  success_count: number
+  failed_count: number
 }
 
 export interface BatchDownloadPackage {
@@ -44,29 +54,29 @@ export const batchApi = {
     return api.post('/batch/create', data)
   },
 
-  // 获取任务状态
+  // 获取任务状态 (使用 query 参数)
   getStatus: (taskId: string): Promise<{ data: BatchTaskStatus }> => {
-    return api.get(`/batch/${taskId}/status`)
+    return api.get('/batch/status', { params: { task_id: taskId } })
   },
 
-  // 获取任务结果
-  getResults: (taskId: string): Promise<{ data: BatchResult[] }> => {
-    return api.get(`/batch/${taskId}/results`)
+  // 获取任务结果 (使用 query 参数)
+  getResults: (taskId: string): Promise<{ data: BatchResult }> => {
+    return api.get('/batch/results', { params: { task_id: taskId } })
   },
 
-  // 下载结果ZIP包
+  // 下载结果ZIP包 (使用 query 参数)
   download: (taskId: string): Promise<{ data: BatchDownloadPackage }> => {
-    return api.get(`/batch/${taskId}/download`)
+    return api.get('/batch/download', { params: { task_id: taskId } })
   },
 
-  // 取消任务
+  // 取消任务 (使用 POST + body)
   cancel: (taskId: string) => {
-    return api.delete(`/batch/${taskId}`)
+    return api.post('/batch/cancel', { task_id: taskId })
   },
 
-  // 列出用户的所有批量任务
-  list: (params?: { page?: number; limit?: number; status?: string }) => {
-    return api.get('/batch/', { params })
+  // 获取批量处理器状态
+  getProcessorStatus: () => {
+    return api.get('/batch/processor-status')
   },
 }
 

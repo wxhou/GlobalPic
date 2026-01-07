@@ -2,7 +2,7 @@
 尺寸适配API
 提供图像尺寸调整和平台适配接口
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from app.services.resize_service import resize_service
@@ -10,8 +10,9 @@ from app.services.resize_service import resize_service
 router = APIRouter()
 
 
-class ResizeRequest(BaseModel):
-    """调整尺寸请求"""
+class ResizeRequestCombined(BaseModel):
+    """组合的调整尺寸请求"""
+    image_id: int
     width: int = Field(..., gt=0, le=4096, description="目标宽度")
     height: int = Field(..., gt=0, le=4096, description="目标高度")
     maintain_aspect_ratio: bool = Field(True, description="是否保持宽高比")
@@ -26,6 +27,18 @@ class CropRequest(BaseModel):
     position: Optional[str] = Field("center", description="裁剪位置")
 
 
+class SmartResizeRequest(BaseModel):
+    """智能调整请求"""
+    max_width: int = Field(2048, ge=100, le=4096)
+    max_height: int = Field(2048, ge=100, le=4096)
+    resample_method: Optional[str] = Field("lanczos", description="重采样方法")
+
+
+class ImageIdRequest(BaseModel):
+    """图像ID请求"""
+    image_id: int
+
+
 class PlatformPresetResponse(BaseModel):
     """平台预设响应"""
     id: str
@@ -35,34 +48,33 @@ class PlatformPresetResponse(BaseModel):
     description: str
 
 
-@router.get("/resize/presets", response_model=List[PlatformPresetResponse])
+@router.get("/presets", response_model=List[PlatformPresetResponse])
 async def get_presets(category: Optional[str] = None):
     """获取平台尺寸预设列表"""
     return resize_service.get_presets(category)
 
 
-@router.get("/resize/categories")
+@router.get("/categories")
 async def get_categories():
     """获取预设分类列表"""
     return {"categories": resize_service.get_categories()}
 
 
-@router.get("/resize/status")
+@router.get("/status")
 async def get_resize_status():
     """获取尺寸调整服务状态"""
     return resize_service.get_status()
 
 
-@router.post("/images/{image_id}/resize")
+@router.post("/resize")
 async def resize_image(
-    image_id: int,
-    request: ResizeRequest,
+    request: ResizeRequestCombined,
     # current_user: User = Depends(get_current_user)  # 需要用户认证
 ):
     """调整图片尺寸"""
     try:
         # TODO: 从数据库获取图片
-        # image = await get_image_by_id(image_id, current_user)
+        # image = await get_image_by_id(request.image_id, current_user)
 
         # 这里需要实现从存储加载图片的逻辑
         # image = load_image_from_storage(image.storage_path)
@@ -84,8 +96,15 @@ async def resize_image(
         return {
             "success": True,
             "message": "尺寸调整功能开发中",
-            "request": request.dict(),
-            # "result_path": result_path,
+            "image_id": request.image_id,
+            "params": {
+                "width": request.width,
+                "height": request.height,
+                "maintain_aspect_ratio": request.maintain_aspect_ratio,
+                "resample_method": request.resample_method,
+                "fit_mode": request.fit_mode,
+                "background_color": request.background_color,
+            },
         }
 
     except ValueError as e:
@@ -94,10 +113,10 @@ async def resize_image(
         raise HTTPException(status_code=500, detail=f"尺寸调整失败: {str(e)}")
 
 
-@router.post("/images/{image_id}/crop")
+@router.post("/crop")
 async def crop_image(
-    image_id: int,
-    request: CropRequest,
+    request: ImageIdRequest,
+    crop_params: CropRequest,
     # current_user: User = Depends(get_current_user)
 ):
     """按比例裁剪图片"""
@@ -107,7 +126,8 @@ async def crop_image(
         return {
             "success": True,
             "message": "裁剪功能开发中",
-            "request": request.dict(),
+            "image_id": request.image_id,
+            "params": crop_params.dict(),
         }
 
     except ValueError as e:
@@ -116,11 +136,10 @@ async def crop_image(
         raise HTTPException(status_code=500, detail=f"裁剪失败: {str(e)}")
 
 
-@router.post("/images/{image_id}/smart-resize")
+@router.post("/smart-resize")
 async def smart_resize(
-    image_id: int,
-    max_width: int = 2048,
-    max_height: int = 2048,
+    request: ImageIdRequest,
+    smart_params: SmartResizeRequest,
     # current_user: User = Depends(get_current_user)
 ):
     """智能调整图片尺寸（限制最大尺寸）"""
@@ -130,8 +149,8 @@ async def smart_resize(
         return {
             "success": True,
             "message": "智能调整功能开发中",
-            "max_width": max_width,
-            "max_height": max_height,
+            "image_id": request.image_id,
+            "params": smart_params.dict(),
         }
 
     except Exception as e:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -56,7 +56,12 @@ class BatchResultResponse(BaseModel):
     failed_count: int
 
 
-@router.post("/create", response_model=BatchCreateResponse)
+class TaskIdRequest(BaseModel):
+    """任务ID请求"""
+    task_id: str
+
+
+@router.post("/batch/create", response_model=BatchCreateResponse)
 async def create_batch_task(
     request: BatchCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -114,7 +119,7 @@ async def create_batch_task(
         )
 
 
-@router.get("/{task_id}/status", response_model=BatchStatusResponse)
+@router.get("/batch/status", response_model=BatchStatusResponse)
 async def get_batch_status(
     task_id: str,
     current_user: User = Depends(get_current_user)
@@ -131,7 +136,7 @@ async def get_batch_status(
     return BatchStatusResponse(**result)
 
 
-@router.get("/{task_id}/results", response_model=BatchResultResponse)
+@router.get("/batch/results", response_model=BatchResultResponse)
 async def get_batch_results(
     task_id: str,
     current_user: User = Depends(get_current_user)
@@ -148,7 +153,7 @@ async def get_batch_results(
     return BatchResultResponse(**result)
 
 
-@router.get("/{task_id}/download")
+@router.get("/batch/download")
 async def download_batch_results(
     task_id: str,
     current_user: User = Depends(get_current_user)
@@ -178,7 +183,6 @@ async def download_batch_results(
 
     from fastapi.responses import StreamingResponse
     import base64
-    import io
 
     return StreamingResponse(
         iter([base64.b64decode(zip_data)]),
@@ -189,13 +193,13 @@ async def download_batch_results(
     )
 
 
-@router.delete("/{task_id}")
+@router.post("/batch/cancel")
 async def cancel_batch_task(
-    task_id: str,
+    request: TaskIdRequest,
     current_user: User = Depends(get_current_user)
 ):
     """取消批量任务"""
-    success = await batch_processor.cancel_task(task_id, current_user.id)
+    success = await batch_processor.cancel_task(request.task_id, current_user.id)
 
     if not success:
         raise HTTPException(
@@ -206,7 +210,7 @@ async def cancel_batch_task(
     return {"success": True, "message": "任务已取消"}
 
 
-@router.get("/status")
+@router.get("/batch/processor-status")
 async def get_batch_processor_status():
     """获取批量处理器状态"""
     return batch_processor.get_status()

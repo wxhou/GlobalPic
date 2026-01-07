@@ -4,7 +4,7 @@
 """
 import logging
 from typing import Dict, List, Optional, Tuple
-from PIL import Image, ImageResampling
+from PIL import Image
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -67,10 +67,10 @@ class ResizeService:
 
     # 重采样方法映射
     RESAMPLE_METHODS: Dict[str, int] = {
-        "lanczos": Image.Resampling.LANCZOS,
-        "bilinear": Image.Resampling.BILINEAR,
-        "bicubic": Image.Resampling.BICUBIC,
-        "nearest": Image.Resampling.NEAREST,
+        "lanczos": Image.LANCZOS,
+        "bilinear": Image.BILINEAR,
+        "bicubic": Image.BICUBIC,
+        "nearest": Image.NEAREST,
     }
 
     def __init__(self):
@@ -143,7 +143,7 @@ class ResizeService:
             调整后的图像
         """
         original_width, original_height = image.size
-        resample = self.RESAMPLE_METHODS.get(resample_method, Image.Resampling.LANCZOS)
+        resample = self.RESAMPLE_METHODS.get(resample_method, Image.LANCZOS)
 
         if maintain_aspect_ratio and fit_mode != "stretch":
             # 计算保持宽高比的尺寸
@@ -257,7 +257,7 @@ class ResizeService:
         new_height = int(original_height * ratio)
 
         return image.resize((new_width, new_height), self.RESAMPLE_METHODS.get(
-            resample_method, Image.Resampling.LANCZOS
+            resample_method, Image.LANCZOS
         ))
 
     def get_status(self) -> Dict:

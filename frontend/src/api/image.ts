@@ -45,18 +45,18 @@ export const imageApi = {
   },
 
   // 获取图片列表
-  list: (params?: { page?: number; limit?: number; is_processed?: boolean }) => {
-    return api.get('/images/', { params })
+  list: (params?: { page?: number; per_page?: number }) => {
+    return api.get('/images', { params })
   },
 
   // 获取单张图片
   get: (id: number) => {
-    return api.get(`/images/${id}`)
+    return api.get('/images/detail', { params: { image_id: id } })
   },
 
-  // 删除图片
+  // 删除图片 (使用 POST + body)
   delete: (id: number) => {
-    return api.delete(`/images/${id}`)
+    return api.post('/images/delete', { image_id: id })
   },
 
   // 处理图片
@@ -71,12 +71,12 @@ export const imageApi = {
 
   // 获取支持的平台尺寸预设
   getPlatformPresets: (): Promise<{ data: PlatformPreset[] }> => {
-    return api.get('/images/resize/presets')
+    return api.get('/resize/presets')
   },
 
-  // 调整图片尺寸
+  // 调整图片尺寸 (使用 POST + body)
   resize: (imageId: number, params: ResizeParams) => {
-    return api.post(`/images/${imageId}/resize`, params)
+    return api.post('/images/resize', { image_id: imageId, ...params })
   },
 
   // 获取图片历史记录

@@ -36,7 +36,7 @@ class Image(Base):
     
     # 元数据
     tags = Column(Text, nullable=True)  # JSON string for tags
-    metadata = Column(Text, nullable=True)  # JSON string for additional metadata
+    extra_data = Column(Text, nullable=True)  # JSON string for additional metadata
     
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -16,16 +16,16 @@ api_router.include_router(auth_router, prefix="/auth", tags=["authentication"])
 api_router.include_router(images_router, prefix="/images", tags=["images"])
 
 # AI处理相关路由
-api_router.include_router(processing_router, prefix="/processing", tags=["processing"])
+api_router.include_router(processing_router, prefix="", tags=["processing"])
 
 # 文案生成路由
 api_router.include_router(copywriting_router, prefix="/copywriting", tags=["copywriting"])
 
 # 批量处理路由
-api_router.include_router(batch_router, prefix="/batch", tags=["batch"])
+api_router.include_router(batch_router, prefix="", tags=["batch"])
 
 # 订阅和支付路由
-api_router.include_router(subscription_router, prefix="/subscription", tags=["subscription"])
+api_router.include_router(subscription_router, prefix="", tags=["subscription"])
 
 # 尺寸适配路由
 api_router.include_router(resize_router, prefix="", tags=["resize"])

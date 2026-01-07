@@ -31,14 +31,13 @@ export interface CreditPackage {
 }
 
 export interface SubscriptionStatus {
-  plan_id: string | null
-  plan_name: string | null
+  user_id: number
+  plan: string
   status: 'active' | 'cancelled' | 'past_due' | 'none'
   images_used: number
-  images_limit: number
+  images_limit: string
   credits_remaining: number
-  renewal_date: string | null
-  cancel_at_period_end: boolean
+  subscription_end?: string
 }
 
 export interface UsageStats {
@@ -70,12 +69,12 @@ export const subscriptionApi = {
 
   // 创建订阅Checkout Session
   createCheckout: (planId: string, billingCycle: 'monthly' | 'yearly') => {
-    return api.post('/subscription/create-checkout', { plan_id: planId, billing_cycle: billingCycle })
+    return api.post('/subscription/create-checkout', { plan_id: planId, mode: billingCycle })
   },
 
   // 创建额度购买Checkout Session
-  createCreditCheckout: (packageId: string) => {
-    return api.post('/subscription/create-credit-checkout', { package_id: packageId })
+  createCreditCheckout: (packageIndex: number) => {
+    return api.post('/subscription/create-credit-checkout', { package_index: packageIndex })
   },
 
   // 获取订阅状态
@@ -96,7 +95,7 @@ export const subscriptionApi = {
   // ===== API Key 管理 =====
 
   // 创建API Key
-  createAPIKey: (name: string): Promise<{ data: { key: string; api_key: APIKey } }> => {
+  createAPIKey: (name: string): Promise<{ data: { api_key: string; key_id: string; name: string; rate_limit: number; ip_whitelist: string[] } }> => {
     return api.post('/subscription/api-keys', { name })
   },
 
@@ -105,9 +104,14 @@ export const subscriptionApi = {
     return api.get('/subscription/api-keys')
   },
 
-  // 删除API Key
-  deleteAPIKey: (keyId: string) => {
-    return api.delete(`/subscription/api-keys/${keyId}`)
+  // 撤销API Key (使用 POST + body)
+  revokeAPIKey: (keyId: string) => {
+    return api.post('/subscription/api-keys/revoke', { key_id: keyId })
+  },
+
+  // 获取支付服务状态
+  getPaymentStatus: () => {
+    return api.get('/subscription/payment/status')
   },
 }
 

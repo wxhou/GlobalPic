@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import asyncio
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
@@ -16,12 +17,38 @@ from app.schemas.image import (
 
 router = APIRouter()
 
-@router.post("/initialize", response_model=dict)
+
+class ProcessingJobIdRequest(BaseModel):
+    """处理任务ID请求"""
+    job_id: int
+
+
+class CancelJobRequest(BaseModel):
+    """取消任务请求"""
+    job_id: int
+
+
+class TextRemovalWithImageRequest(BaseModel):
+    """文字抹除请求（包含图像ID）"""
+    image_id: int
+    confidence_threshold: float = 0.5
+    language: str = "en"
+
+
+class BackgroundReplacementWithImageRequest(BaseModel):
+    """背景重绘请求（包含图像ID）"""
+    image_id: int
+    style_id: str = "minimal_white"
+    custom_prompt: Optional[str] = None
+    strength: float = 0.8
+
+
+@router.post("/processing/initialize", response_model=dict)
 async def initialize_ai_models():
     """初始化AI模型"""
     try:
         success = await ai_processor.initialize_models()
-        
+
         if success:
             return {
                 "success": True,
@@ -33,19 +60,21 @@ async def initialize_ai_models():
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="AI模型初始化失败"
             )
-            
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"初始化失败: {str(e)}"
         )
 
-@router.get("/status", response_model=dict)
+
+@router.get("/processing/status", response_model=dict)
 async def get_processing_status():
     """获取AI处理状态"""
     return ai_processor.get_processing_status()
 
-@router.get("/jobs", response_model=List[ProcessingJobResponse])
+
+@router.get("/processing/jobs", response_model=List[ProcessingJobResponse])
 async def get_user_processing_jobs(
     status: Optional[ProcessingStatus] = None,
     page: int = Query(1, ge=1),
@@ -61,43 +90,45 @@ async def get_user_processing_jobs(
         page=page,
         per_page=per_page
     )
-    
+
     return jobs
 
-@router.get("/jobs/{job_id}", response_model=ProcessingJobResponse)
+
+@router.get("/processing/jobs/detail", response_model=ProcessingJobResponse)
 async def get_processing_job_detail(
-    job_id: int,
+    job_id: int = Query(..., description="处理任务ID"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """获取处理任务详情"""
     image_service = ImageService(db)
     job = image_service.get_processing_job_by_id(job_id, current_user.id)
-    
+
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="处理任务不存在"
         )
-    
+
     return job
 
-@router.get("/jobs/{job_id}/status", response_model=dict)
+
+@router.get("/processing/jobs/status", response_model=dict)
 async def get_processing_job_status(
-    job_id: int,
+    job_id: int = Query(..., description="处理任务ID"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """获取处理任务实时状态"""
     image_service = ImageService(db)
     job = image_service.get_processing_job_by_id(job_id, current_user.id)
-    
+
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="处理任务不存在"
         )
-    
+
     return {
         "job_id": job.id,
         "status": job.status,
@@ -109,150 +140,152 @@ async def get_processing_job_status(
         "estimated_completion": job.estimated_completion
     }
 
-@router.delete("/jobs/{job_id}")
+
+@router.post("/processing/jobs/cancel")
 async def cancel_processing_job(
-    job_id: int,
+    request: CancelJobRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """取消处理任务"""
     image_service = ImageService(db)
-    job = image_service.get_processing_job_by_id(job_id, current_user.id)
-    
+    job = image_service.get_processing_job_by_id(request.job_id, current_user.id)
+
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="处理任务不存在"
         )
-    
+
     # 只有待处理或处理中的任务可以取消
     if job.status not in [ProcessingStatus.PENDING, ProcessingStatus.PROCESSING]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="只能取消待处理或处理中的任务"
         )
-    
+
     # 更新任务状态为失败（用户取消）
     image_service.update_processing_job_status(
-        job_id=job_id,
+        job_id=request.job_id,
         status=ProcessingStatus.FAILED,
         error_message="用户取消"
     )
-    
+
     return {"success": True, "message": "任务已取消"}
 
-@router.post("/text-removal/{image_id}", response_model=ProcessingJobCreateResponse)
+
+@router.post("/processing/text-removal", response_model=ProcessingJobCreateResponse)
 async def create_text_removal_job(
-    image_id: int,
-    text_removal_request: TextRemovalRequest,
+    request: TextRemovalWithImageRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """创建文字抹除处理任务"""
-    
+
     # 验证图像是否存在且属于当前用户
     image_service = ImageService(db)
-    image = image_service.get_image_by_id(image_id, current_user.id)
-    
+    image = image_service.get_image_by_id(request.image_id, current_user.id)
+
     if not image:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="图像不存在"
         )
-    
+
     # 检查AI模型是否已初始化
     if not ai_processor.models_loaded:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI模型未初始化，请先调用 /processing/initialize"
         )
-    
+
     try:
         # 创建处理任务
         processing_job = image_service.create_processing_job(
-            image_id=image_id,
+            image_id=request.image_id,
             user_id=current_user.id,
             operation_type=OperationType.TEXT_REMOVAL,
             parameters={
-                "confidence_threshold": text_removal_request.confidence_threshold,
-                "language": text_removal_request.language
+                "confidence_threshold": request.confidence_threshold,
+                "language": request.language
             }
         )
-        
+
         # 异步启动处理任务
         asyncio.create_task(
-            _process_text_removal_async(processing_job.id, image_id, current_user.id, db)
+            _process_text_removal_async(processing_job.id, request.image_id, current_user.id, db)
         )
-        
+
         return ProcessingJobCreateResponse(
             success=True,
             message="文字抹除任务创建成功",
             job=ProcessingJobResponse.from_orm(processing_job)
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"创建任务失败: {str(e)}"
         )
 
-@router.post("/background-replacement/{image_id}", response_model=ProcessingJobCreateResponse)
+
+@router.post("/processing/background-replacement", response_model=ProcessingJobCreateResponse)
 async def create_background_replacement_job(
-    image_id: int,
-    background_request: BackgroundReplacementRequest,
+    request: BackgroundReplacementWithImageRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """创建背景重绘处理任务"""
-    
+
     # 验证图像是否存在且属于当前用户
     image_service = ImageService(db)
-    image = image_service.get_image_by_id(image_id, current_user.id)
-    
+    image = image_service.get_image_by_id(request.image_id, current_user.id)
+
     if not image:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="图像不存在"
         )
-    
+
     # 检查AI模型是否已初始化
     if not ai_processor.models_loaded:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI模型未初始化，请先调用 /processing/initialize"
         )
-    
+
     try:
         # 创建处理任务
         processing_job = image_service.create_processing_job(
-            image_id=image_id,
+            image_id=request.image_id,
             user_id=current_user.id,
             operation_type=OperationType.BACKGROUND_REPLACEMENT,
             parameters={
-                "style_id": background_request.style_id,
-                "custom_prompt": background_request.custom_prompt,
-                "strength": background_request.strength
+                "style_id": request.style_id,
+                "custom_prompt": request.custom_prompt,
+                "strength": request.strength
             }
         )
-        
+
         # 异步启动处理任务
         asyncio.create_task(
-            _process_background_replacement_async(processing_job.id, image_id, current_user.id, db)
+            _process_background_replacement_async(processing_job.id, request.image_id, current_user.id, db)
         )
-        
+
         return ProcessingJobCreateResponse(
             success=True,
             message="背景重绘任务创建成功",
             job=ProcessingJobResponse.from_orm(processing_job)
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"创建任务失败: {str(e)}"
         )
 
-@router.get("/background-styles", response_model=List[dict])
+
+@router.get("/processing/background-styles", response_model=List[dict])
 async def get_background_styles():
     """获取可用的背景风格"""
     styles = [
@@ -305,8 +338,9 @@ async def get_background_styles():
             "category": "ecommerce"
         }
     ]
-    
+
     return styles
+
 
 async def _process_text_removal_async(
     job_id: int,
@@ -317,24 +351,24 @@ async def _process_text_removal_async(
     """异步文字抹除处理"""
     try:
         image_service = ImageService(db)
-        
+
         # 更新任务状态为处理中
         image_service.update_processing_job_status(
             job_id=job_id,
             status=ProcessingStatus.PROCESSING,
             progress=10
         )
-        
+
         # 获取图像信息
         image = image_service.get_image_by_id(image_id, user_id)
         if not image:
             raise ValueError("图像不存在")
-        
+
         # 获取处理参数
         job = image_service.get_processing_job_by_id(job_id, user_id)
         if not job:
             raise ValueError("处理任务不存在")
-        
+
         parameters = {}
         if job.parameters:
             try:
@@ -342,21 +376,21 @@ async def _process_text_removal_async(
                 parameters = json.loads(job.parameters)
             except:
                 pass
-        
+
         # 更新进度
         image_service.update_processing_job_status(
             job_id=job_id,
             status=ProcessingStatus.PROCESSING,
             progress=30
         )
-        
+
         # 调用AI处理器
         result = await ai_processor.process_image(
             image_path=image.storage_path,
             operation_type="text_removal",
             parameters=parameters
         )
-        
+
         # 更新最终结果
         if result["success"]:
             image_service.update_processing_job_status(
@@ -371,7 +405,7 @@ async def _process_text_removal_async(
                 status=ProcessingStatus.FAILED,
                 error_message=result.get("error", "处理失败")
             )
-        
+
     except Exception as e:
         image_service = ImageService(db)
         image_service.update_processing_job_status(
@@ -379,6 +413,7 @@ async def _process_text_removal_async(
             status=ProcessingStatus.FAILED,
             error_message=str(e)
         )
+
 
 async def _process_background_replacement_async(
     job_id: int,
@@ -389,24 +424,24 @@ async def _process_background_replacement_async(
     """异步背景重绘处理"""
     try:
         image_service = ImageService(db)
-        
+
         # 更新任务状态为处理中
         image_service.update_processing_job_status(
             job_id=job_id,
             status=ProcessingStatus.PROCESSING,
             progress=10
         )
-        
+
         # 获取图像信息
         image = image_service.get_image_by_id(image_id, user_id)
         if not image:
             raise ValueError("图像不存在")
-        
+
         # 获取处理参数
         job = image_service.get_processing_job_by_id(job_id, user_id)
         if not job:
             raise ValueError("处理任务不存在")
-        
+
         parameters = {}
         if job.parameters:
             try:
@@ -414,21 +449,21 @@ async def _process_background_replacement_async(
                 parameters = json.loads(job.parameters)
             except:
                 pass
-        
+
         # 更新进度
         image_service.update_processing_job_status(
             job_id=job_id,
             status=ProcessingStatus.PROCESSING,
             progress=30
         )
-        
+
         # 调用AI处理器
         result = await ai_processor.process_image(
             image_path=image.storage_path,
             operation_type="background_replacement",
             parameters=parameters
         )
-        
+
         # 更新最终结果
         if result["success"]:
             image_service.update_processing_job_status(
@@ -443,7 +478,7 @@ async def _process_background_replacement_async(
                 status=ProcessingStatus.FAILED,
                 error_message=result.get("error", "处理失败")
             )
-        
+
     except Exception as e:
         image_service = ImageService(db)
         image_service.update_processing_job_status(

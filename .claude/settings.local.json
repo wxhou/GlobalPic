@@ -6,7 +6,9 @@
       "Bash(openspec list --specs)",
       "Bash(openspec show:*)",
       "Bash(openspec validate:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(conda info:*)",
+      "Bash(conda env list:*)"
     ]
   }
 }

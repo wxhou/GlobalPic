@@ -1,20 +1,17 @@
 import { useState, useCallback } from 'react'
-import { Upload, X, FileImage, Layers, Loader2, Download, Trash2, CheckCircle } from 'lucide-react'
+import { Upload, X, Layers, Loader2, Download, Trash2, CheckCircle, AlertCircle } from 'lucide-react'
+import { batchApi, BatchCreateRequest } from '../api/batch'
 
 interface BatchImage {
   id: string
   file: File
   preview: string
   status: 'pending' | 'processing' | 'completed' | 'failed'
+  error?: string
 }
 
 interface BatchProcessorProps {
-  onProcess?: (images: File[], options: BatchOptions) => void
-}
-
-interface BatchOptions {
-  operations: string[]
-  styleId: string
+  onProcess?: (taskId: string) => void
 }
 
 export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
@@ -23,8 +20,20 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
   const [progress, setProgress] = useState(0)
   const [selectedOperations, setSelectedOperations] = useState<string[]>(['text_removal', 'background_replacement'])
   const [selectedStyle, setSelectedStyle] = useState('minimal_white')
+  const [error, setError] = useState<string | null>(null)
+  const [taskId, setTaskId] = useState<string | null>(null)
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  // 将文件转换为 base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = error => reject(error)
+    })
+  }
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
@@ -32,22 +41,24 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
       file => file.type.startsWith('image/')
     )
 
-    addImages(files)
+    await addImages(files)
   }, [])
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    addImages(files)
+    await addImages(files)
   }
 
-  const addImages = (files: File[]) => {
-    const newImages: BatchImage[] = files.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
-      file,
-      preview: URL.createObjectURL(file),
-      status: 'pending'
-    }))
-
+  const addImages = async (files: File[]) => {
+    const newImages: BatchImage[] = []
+    for (const file of files.slice(0, 50 - images.length)) {
+      newImages.push({
+        id: Math.random().toString(36).substr(2, 9),
+        file,
+        preview: URL.createObjectURL(file),
+        status: 'pending'
+      })
+    }
     setImages(prev => [...prev, ...newImages].slice(0, 50))
   }
 
@@ -70,47 +81,128 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
   }
 
   const handleProcess = async () => {
-    if (images.length === 0 || selectedOperations.length === 0) return
+    if (images.length === 0 || selectedOperations.length === 0) {
+      setError('请选择至少一张图片和一个处理操作')
+      return
+    }
 
     setIsProcessing(true)
     setProgress(0)
+    setError(null)
 
-    // Simulate processing
-    for (let i = 0; i < images.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setImages(prev => prev.map((img, idx) =>
-        idx === i ? { ...img, status: 'processing' as const } : img
-      ))
-      setProgress(((i + 1) / images.length) * 100)
-    }
+    try {
+      // 转换图片为 base64
+      const imageDataList = await Promise.all(
+        images.map(async (img) => ({
+          image: await fileToBase64(img.file),
+          filename: img.file.name
+        }))
+      )
 
-    // Mark all as completed
-    setImages(prev => prev.map(img => ({ ...img, status: 'completed' as const })))
-    setIsProcessing(false)
-
-    if (onProcess) {
-      onProcess(images.map(img => img.file), {
+      // 创建批量任务
+      const request: BatchCreateRequest = {
+        images: imageDataList,
         operations: selectedOperations,
-        styleId: selectedStyle
-      })
+        style_id: selectedStyle
+      }
+
+      const response = await batchApi.create(request)
+      setTaskId(response.data.task_id)
+
+      // 轮询任务状态
+      await pollTaskStatus(response.data.task_id)
+
+      setImages(prev => prev.map(img => ({ ...img, status: 'completed' as const })))
+      setProgress(100)
+
+      if (onProcess) {
+        onProcess(response.data.task_id)
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : '处理失败，请重试'
+      setError(errorMessage)
+      setImages(prev => prev.map(img => ({ ...img, status: 'failed' as const, error: errorMessage })))
+    } finally {
+      setIsProcessing(false)
     }
   }
 
-  const handleDownload = () => {
-    // Simulate download
-    alert('下载功能将在实际实现时提供')
+  const pollTaskStatus = async (id: string) => {
+    const maxAttempts = 120 // 最多轮询 2 分钟
+    let attempts = 0
+
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        throw new Error('处理超时')
+      }
+
+      try {
+        const response = await batchApi.getStatus(id)
+        const status = response.data
+
+        // 更新进度
+        const newProgress = status.progress
+        setProgress(newProgress)
+
+        // 更新各图片状态
+        setImages(prev => {
+          const processedCount = Math.floor((newProgress / 100) * prev.length)
+          return prev.map((img, idx) => {
+            if (idx < processedCount) {
+              return { ...img, status: 'completed' as const }
+            } else if (idx === processedCount) {
+              return { ...img, status: 'processing' as const }
+            }
+            return img
+          })
+        })
+
+        if (status.status === 'completed') {
+          return true
+        } else if (status.status === 'failed') {
+          throw new Error('批量处理任务失败')
+        }
+      } catch {
+        // 继续轮询
+      }
+
+      attempts++
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      return poll()
+    }
+
+    return poll()
+  }
+
+  const handleDownload = async () => {
+    if (!taskId) {
+      setError('没有可下载的结果')
+      return
+    }
+
+    try {
+      const response = await batchApi.download(taskId)
+      // 创建下载链接
+      const link = document.createElement('a')
+      link.href = response.data.download_url
+      link.download = `batch_${taskId}.zip`
+      link.click()
+    } catch {
+      setError('下载失败，请稍后重试')
+    }
   }
 
   const handleClear = () => {
     images.forEach(img => URL.revokeObjectURL(img.preview))
     setImages([])
     setProgress(0)
+    setTaskId(null)
+    setError(null)
   }
 
   const operations = [
     { id: 'text_removal', name: '文字抹除' },
-    { id: 'background_replacement', name: '背景重绘' },
-    { id: 'subject_segmentation', name: '主体分割' }
+    { id: 'background_replacement', name: '背景重绘' }
   ]
 
   const styles = [
@@ -143,6 +235,14 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
           )}
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-600">
+          <AlertCircle className="w-5 h-5" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
 
       {/* Upload Area */}
       <div className="p-6">
@@ -219,6 +319,9 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
                     )}
                     {image.status === 'processing' && (
                       <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
+                    )}
+                    {image.status === 'failed' && (
+                      <AlertCircle className="w-6 h-6 text-red-400" />
                     )}
                   </div>
 
@@ -320,7 +423,7 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
             )}
           </button>
 
-          {images.some(img => img.status === 'completed') && (
+          {taskId && images.some(img => img.status === 'completed') && (
             <button
               onClick={handleDownload}
               className="px-6 py-3 rounded-xl font-medium bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
