@@ -1,0 +1,277 @@
+[
+  {
+    "name": "test_upload_single_image_success",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload"
+    },
+    "response": {
+      "errcode": 0,
+      "errmsg": "操作成功",
+      "data": {
+        "success": true,
+        "message": "图像上传成功",
+        "image": {
+          "id": 85,
+          "original_filename": "test.jpg",
+          "filename": "6a83be47-6e30-445c-ba5a-1a5838871399.jpg",
+          "file_size": 825,
+          "file_format": "jpg",
+          "storage_url": "/static/images/6a83be47-6e30-445c-ba5a-1a5838871399.jpg",
+          "created_at": "2026-01-11T15:17:57"
+        }
+      }
+    }
+  },
+  {
+    "name": "test_upload_image_no_file",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload"
+    },
+    "response": {
+      "errcode": 1005,
+      "errmsg": "数据验证失败",
+      "data": {
+        "validation_errors": [
+          {
+            "field": "body.file",
+            "message": "缺少必填字段",
+            "type": "missing"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "test_upload_image_invalid_format",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload"
+    },
+    "response": {
+      "errcode": 3002,
+      "errmsg": "不支持的文件格式。支持格式: webp, png, jpg, jpeg"
+    }
+  },
+  {
+    "name": "test_upload_batch_success",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload/batch"
+    },
+    "response": {
+      "errcode": 0,
+      "errmsg": "操作成功",
+      "data": {
+        "results": [
+          {
+            "success": true,
+            "message": "上传成功",
+            "image": {
+              "id": 86,
+              "original_filename": "test0.jpg",
+              "filename": "c46a4c97-ffb9-42f4-a282-ad0d03b800fe.jpg",
+              "file_size": 825,
+              "file_format": "jpg",
+              "storage_url": "/static/images/c46a4c97-ffb9-42f4-a282-ad0d03b800fe.jpg",
+              "created_at": "2026-01-11T15:17:58"
+            }
+          },
+          {
+            "success": true,
+            "message": "上传成功",
+            "image": {
+              "id": 87,
+              "original_filename": "test1.jpg",
+              "filename": "4156fdc6-d1ee-4783-b7a6-e624d5fd92cf.jpg",
+              "file_size": 825,
+              "file_format": "jpg",
+              "storage_url": "/static/images/4156fdc6-d1ee-4783-b7a6-e624d5fd92cf.jpg",
+              "created_at": "2026-01-11T15:17:58"
+            }
+          },
+          {
+            "success": true,
+            "message": "上传成功",
+            "image": {
+              "id": 88,
+              "original_filename": "test2.jpg",
+              "filename": "571fc00e-bcf7-4330-97e0-275730e45d09.jpg",
+              "file_size": 825,
+              "file_format": "jpg",
+              "storage_url": "/static/images/571fc00e-bcf7-4330-97e0-275730e45d09.jpg",
+              "created_at": "2026-01-11T15:17:58"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "test_upload_batch_too_many_images",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload/batch"
+    },
+    "response": {
+      "errcode": 3006,
+      "errmsg": "批量上传最多支持9张图片"
+    }
+  },
+  {
+    "name": "test_upload_without_auth",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/upload"
+    },
+    "response": {
+      "errcode": 2001,
+      "errmsg": "未登录或登录已过期"
+    }
+  },
+  {
+    "name": "test_get_images_with_auth",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images"
+    },
+    "response": {
+      "errcode": 0,
+      "errmsg": "操作成功",
+      "data": {
+        "images": [],
+        "total": 0,
+        "page": 1,
+        "per_page": 20,
+        "has_next": false,
+        "has_prev": false
+      }
+    }
+  },
+  {
+    "name": "test_get_images_pagination",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images?page=1&per_page=10"
+    },
+    "response": {
+      "errcode": 0,
+      "errmsg": "操作成功",
+      "data": {
+        "images": [],
+        "total": 0,
+        "page": 1,
+        "per_page": 10,
+        "has_next": false,
+        "has_prev": false
+      }
+    }
+  },
+  {
+    "name": "test_get_images_without_auth",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images"
+    },
+    "response": {
+      "errcode": 2001,
+      "errmsg": "未登录或登录已过期"
+    }
+  },
+  {
+    "name": "test_get_image_detail_success",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images/detail?image_id=1"
+    },
+    "response": {
+      "errcode": 3003,
+      "errmsg": "图像不存在"
+    }
+  },
+  {
+    "name": "test_get_image_detail_not_found",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images/detail?image_id=99999"
+    },
+    "response": {
+      "errcode": 3003,
+      "errmsg": "图像不存在"
+    }
+  },
+  {
+    "name": "test_get_image_detail_missing_id",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images/detail"
+    },
+    "response": {
+      "errcode": 1005,
+      "errmsg": "数据验证失败",
+      "data": {
+        "validation_errors": [
+          {
+            "field": "query.image_id",
+            "message": "缺少必填字段",
+            "type": "missing"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "test_get_image_detail_without_auth",
+    "request": {
+      "method": "GET",
+      "url": "http://localhost:8000/api/v1/images/images/detail?image_id=1"
+    },
+    "response": {
+      "errcode": 2001,
+      "errmsg": "未登录或登录已过期"
+    }
+  },
+  {
+    "name": "test_delete_image_success",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/delete",
+      "body": {
+        "image_id": 99999
+      }
+    },
+    "response": {
+      "errcode": 3003,
+      "errmsg": "图像不存在"
+    }
+  },
+  {
+    "name": "test_delete_image_not_found",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/delete",
+      "body": {
+        "image_id": 99999
+      }
+    },
+    "response": {
+      "errcode": 3003,
+      "errmsg": "图像不存在"
+    }
+  },
+  {
+    "name": "test_delete_image_without_auth",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v1/images/images/delete",
+      "body": {
+        "image_id": 1
+      }
+    },
+    "response": {
+      "errcode": 2001,
+      "errmsg": "未登录或登录已过期"
+    }
+  }
+]

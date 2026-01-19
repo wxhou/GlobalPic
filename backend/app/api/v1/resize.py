@@ -2,9 +2,10 @@
 尺寸适配API
 提供图像尺寸调整和平台适配接口
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
+from app.core.response import ErrCode, error_response, success_response
 from app.services.resize_service import resize_service
 
 router = APIRouter()
@@ -48,29 +49,27 @@ class PlatformPresetResponse(BaseModel):
     description: str
 
 
-@router.get("/presets", response_model=List[PlatformPresetResponse])
+@router.get("/presets")
 async def get_presets(category: Optional[str] = None):
     """获取平台尺寸预设列表"""
-    return resize_service.get_presets(category)
+    presets = resize_service.get_presets(category)
+    return success_response({"presets": presets})
 
 
 @router.get("/categories")
 async def get_categories():
     """获取预设分类列表"""
-    return {"categories": resize_service.get_categories()}
+    return success_response({"categories": resize_service.get_categories()})
 
 
 @router.get("/status")
 async def get_resize_status():
     """获取尺寸调整服务状态"""
-    return resize_service.get_status()
+    return success_response(resize_service.get_status())
 
 
 @router.post("/resize")
-async def resize_image(
-    request: ResizeRequestCombined,
-    # current_user: User = Depends(get_current_user)  # 需要用户认证
-):
+async def resize_image(request: ResizeRequestCombined):
     """调整图片尺寸"""
     try:
         # TODO: 从数据库获取图片
@@ -93,7 +92,7 @@ async def resize_image(
         # 保存结果
         # result_path = save_image_to_storage(result_image)
 
-        return {
+        return success_response({
             "success": True,
             "message": "尺寸调整功能开发中",
             "image_id": request.image_id,
@@ -105,53 +104,45 @@ async def resize_image(
                 "fit_mode": request.fit_mode,
                 "background_color": request.background_color,
             },
-        }
+        })
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return error_response(ErrCode.INVALID_REQUEST, custom_message=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"尺寸调整失败: {str(e)}")
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message=f"尺寸调整失败: {str(e)}")
 
 
 @router.post("/crop")
-async def crop_image(
-    request: ImageIdRequest,
-    crop_params: CropRequest,
-    # current_user: User = Depends(get_current_user)
-):
+async def crop_image(request: ImageIdRequest, crop_params: CropRequest):
     """按比例裁剪图片"""
     try:
         # TODO: 实现裁剪逻辑
 
-        return {
+        return success_response({
             "success": True,
             "message": "裁剪功能开发中",
             "image_id": request.image_id,
             "params": crop_params.dict(),
-        }
+        })
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return error_response(ErrCode.INVALID_REQUEST, custom_message=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"裁剪失败: {str(e)}")
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message=f"裁剪失败: {str(e)}")
 
 
 @router.post("/smart-resize")
-async def smart_resize(
-    request: ImageIdRequest,
-    smart_params: SmartResizeRequest,
-    # current_user: User = Depends(get_current_user)
-):
+async def smart_resize(request: ImageIdRequest, smart_params: SmartResizeRequest):
     """智能调整图片尺寸（限制最大尺寸）"""
     try:
         # TODO: 实现智能调整逻辑
 
-        return {
+        return success_response({
             "success": True,
             "message": "智能调整功能开发中",
             "image_id": request.image_id,
             "params": smart_params.dict(),
-        }
+        })
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"智能调整失败: {str(e)}")
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message=f"智能调整失败: {str(e)}")

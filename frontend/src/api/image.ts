@@ -1,87 +1,139 @@
-import api from './auth'
+import api, { extractData } from './index'
+import { UnifiedResponse } from './types'
 
-// 图片处理相关API
-
-export interface ImageProcessingRequest {
-  image_id: number
-  operation_type: 'text_removal' | 'background_replacement' | 'resize'
-  parameters: Record<string, unknown>
+export interface ImageInfo {
+  id: number
+  original_filename: string
+  filename: string
+  file_size: number
+  file_format: string
+  storage_url: string
+  created_at: string
 }
 
-export interface ImageProcessingResponse {
+export interface ImageUploadResponse {
   success: boolean
-  processing_time: number
-  result?: {
-    output_urls: string[]
-    quality_score: number
-    [key: string]: unknown
-  }
-  error?: string
+  message: string
+  image: ImageInfo
 }
 
-export interface ResizeParams {
-  width: number
-  height: number
-  maintain_aspect_ratio?: boolean
-  resample_method?: 'lanczos' | 'bilinear' | 'bicubic' | 'nearest'
-  fit_mode?: 'cover' | 'contain' | 'fill' | 'stretch'
-  background_color?: string
+export interface ImageListResponse {
+  images: ImageInfo[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
 }
 
-export interface PlatformPreset {
-  id: string
-  name: string
-  width: number
-  height: number
-  description: string
+export interface ProcessingJob {
+  id: number
+  image_id: number
+  operation_type: string
+  status: string
+  parameters: Record<string, unknown>
+  output_url: string | null
+  quality_score: number | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface ProcessingJobCreateResponse {
+  success: boolean
+  message: string
+  job: ProcessingJob
+}
+
+export interface DeleteImageRequest {
+  image_id: number
 }
 
 export const imageApi = {
-  // 上传图片
-  upload: (formData: FormData) => {
-    return api.post('/images/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+  // 上传单张图片
+  uploadImage: async (file: File): Promise<ImageUploadResponse> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await api.post<UnifiedResponse<ImageUploadResponse>>(
+      '/images/upload',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+    return extractData<ImageUploadResponse>(response) as ImageUploadResponse
+  },
+
+  // 批量上传图片
+  uploadImagesBatch: async (files: File[]): Promise<{ results: ImageUploadResponse[] }> => {
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append('files', file)
     })
+    
+    const response = await api.post<UnifiedResponse<{ results: ImageUploadResponse[] }>>(
+      '/images/upload/batch',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+    return extractData(response) as { results: ImageUploadResponse[] }
   },
 
   // 获取图片列表
-  list: (params?: { page?: number; per_page?: number }) => {
-    return api.get('/images', { params })
+  getImages: async (page: number = 1, perPage: number = 20): Promise<ImageListResponse> => {
+    const response = await api.get<UnifiedResponse<ImageListResponse>>('/images', {
+      params: { page, per_page: perPage },
+    })
+    return extractData<ImageListResponse>(response) as ImageListResponse
   },
 
-  // 获取单张图片
-  get: (id: number) => {
-    return api.get('/images/detail', { params: { image_id: id } })
+  // 获取图片详情
+  getImageDetail: async (imageId: number): Promise<{ image: ImageInfo }> => {
+    const response = await api.get<UnifiedResponse<{ image: ImageInfo }>>('/images/detail', {
+      params: { image_id: imageId },
+    })
+    return extractData(response) as { image: ImageInfo }
   },
 
-  // 删除图片 (使用 POST + body)
-  delete: (id: number) => {
-    return api.post('/images/delete', { image_id: id })
+  // 删除图片
+  deleteImage: async (imageId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post<UnifiedResponse<{ success: boolean; message: string }>>(
+      '/images/delete',
+      { image_id: imageId }
+    )
+    return extractData(response) as { success: boolean; message: string }
   },
 
-  // 处理图片
-  process: (data: ImageProcessingRequest) => {
-    return api.post('/images/process', data)
+  // 创建处理任务
+  createProcessingJob: async (
+    imageId: number,
+    operationType: string,
+    parameters?: Record<string, unknown>
+  ): Promise<ProcessingJobCreateResponse> => {
+    const response = await api.post<UnifiedResponse<ProcessingJobCreateResponse>>(
+      '/images/process',
+      {
+        image_id: imageId,
+        operation_type: operationType,
+        parameters,
+      }
+    )
+    return extractData<ProcessingJobCreateResponse>(response) as ProcessingJobCreateResponse
   },
 
-  // 获取处理状态
-  getProcessingStatus: () => {
-    return api.get('/images/processing/status')
-  },
-
-  // 获取支持的平台尺寸预设
-  getPlatformPresets: (): Promise<{ data: PlatformPreset[] }> => {
-    return api.get('/resize/presets')
-  },
-
-  // 调整图片尺寸 (使用 POST + body)
-  resize: (imageId: number, params: ResizeParams) => {
-    return api.post('/images/resize', { image_id: imageId, ...params })
-  },
-
-  // 获取图片历史记录
-  getHistory: (params?: { page?: number; limit?: number }) => {
-    return api.get('/images/history', { params })
+  // 获取处理任务状态
+  getProcessingJob: async (jobId: number): Promise<{ job: ProcessingJob }> => {
+    const response = await api.get<UnifiedResponse<{ job: ProcessingJob }>>(
+      '/images/jobs',
+      { params: { job_id: jobId } }
+    )
+    return extractData(response) as { job: ProcessingJob }
   },
 }
 

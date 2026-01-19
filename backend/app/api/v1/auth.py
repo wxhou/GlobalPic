@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -7,10 +7,10 @@ import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.response import ErrCode, error_response, success_response, BusinessException
 from app.schemas.user import (
     UserCreate, UserLogin, User, UserResponse, Token, 
-    EmailVerification, PasswordReset, PasswordResetConfirm,
-    MessageResponse
+    PasswordReset, PasswordResetConfirm
 )
 from app.services.auth_service import AuthService
 from app.models.user import User
@@ -23,12 +23,6 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """获取当前用户（需要认证）"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无法验证凭据",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
     try:
         payload = jwt.decode(
             credentials.credentials, 
@@ -37,43 +31,36 @@ async def get_current_user(
         )
         email = payload.get("sub")
         if email is None:
-            raise credentials_exception
-    except InvalidTokenError:
-        raise credentials_exception
+            raise BusinessException(ErrCode.TOKEN_INVALID)
+    except (InvalidTokenError, ExpiredSignatureError):
+        raise BusinessException(ErrCode.TOKEN_INVALID)
     
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if user is None:
-        raise credentials_exception
+        raise BusinessException(ErrCode.UNAUTHORIZED)
     
     return user
 
-@router.post("/register", response_model=MessageResponse)
-async def register(user_data: UserCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+@router.post("/register")
+async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """用户注册"""
     auth_service = AuthService(db)
     
     try:
         await auth_service.create_user(user_data)
         
-        # TODO: 发送邮箱验证邮件（后台任务）
-        # background_tasks.add_task(send_verification_email, user.email, user.verification_token)
-        
-        return MessageResponse(
-            message="注册成功，请检查邮箱并验证账户"
-        )
+        return success_response({
+            "message": "注册成功",
+            "email": user_data.email
+        })
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        # 邮箱已存在
+        return error_response(ErrCode.EMAIL_ALREADY_EXISTS)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="注册失败，请稍后重试"
-        )
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message="注册失败，请稍后重试")
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 async def login(user_credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """用户登录"""
     auth_service = AuthService(db)
@@ -84,44 +71,20 @@ async def login(user_credentials: UserLogin, db: AsyncSession = Depends(get_db))
     )
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="邮箱或密码错误"
-        )
-    
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="请先验证邮箱"
-        )
+        return error_response(ErrCode.INCORRECT_PASSWORD, custom_message="用户名或密码错误")
     
     access_token = auth_service.create_access_token(
         data={"sub": user.email}
     )
     
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        expires_in=settings.JWT_EXPIRE_MINUTES * 60,
-        user=UserResponse.model_validate(user)
-    )
+    return success_response({
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
+        "user": UserResponse.model_validate(user).model_dump()
+    })
 
-@router.post("/verify-email", response_model=MessageResponse)
-async def verify_email(verification_data: EmailVerification, db: AsyncSession = Depends(get_db)):
-    """邮箱验证"""
-    auth_service = AuthService(db)
-    
-    success = await auth_service.verify_email(verification_data.token)
-    
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="验证链接无效或已过期"
-        )
-    
-    return MessageResponse(message="邮箱验证成功")
-
-@router.post("/forgot-password", response_model=MessageResponse)
+@router.post("/forgot-password")
 async def forgot_password(password_reset: PasswordReset, db: AsyncSession = Depends(get_db)):
     """忘记密码"""
     auth_service = AuthService(db)
@@ -131,16 +94,12 @@ async def forgot_password(password_reset: PasswordReset, db: AsyncSession = Depe
         
         # TODO: 发送密码重置邮件
         
-        return MessageResponse(
-            message="密码重置链接已发送到您的邮箱"
-        )
+        return success_response({"message": "密码重置链接已发送到您的邮箱"})
     except ValueError:
         # 出于安全考虑，即使邮箱不存在也返回成功消息
-        return MessageResponse(
-            message="密码重置链接已发送到您的邮箱"
-        )
+        return success_response({"message": "密码重置链接已发送到您的邮箱"})
 
-@router.post("/reset-password", response_model=MessageResponse)
+@router.post("/reset-password")
 async def reset_password(
     password_reset_data: PasswordResetConfirm, 
     db: AsyncSession = Depends(get_db)
@@ -154,19 +113,20 @@ async def reset_password(
     )
     
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="重置链接无效或已过期"
-        )
+        return error_response(ErrCode.INVALID_REQUEST, custom_message="重置链接无效或已过期")
     
-    return MessageResponse(message="密码重置成功")
+    return success_response({"message": "密码重置成功"})
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """获取当前用户信息"""
-    return UserResponse.model_validate(current_user)
+    return success_response(UserResponse.model_validate(current_user).model_dump())
 
 @router.get("/verify-token")
 async def verify_token(current_user: User = Depends(get_current_user)):
     """验证token是否有效"""
-    return {"valid": True, "user_id": current_user.id, "email": current_user.email}
+    return success_response({
+        "valid": True, 
+        "user_id": current_user.id, 
+        "email": current_user.email
+    })

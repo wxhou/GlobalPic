@@ -1,64 +1,49 @@
-import axios from 'axios'
+import api, { extractData } from './index'
+import { User, AuthTokens, APIError } from './types'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
+interface LoginResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  user: User
+}
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-api.interceptors.response.use(
-  response => response,
-  async error => {
-    const originalRequest = error.config
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true
-      const refreshToken = localStorage.getItem('refresh_token')
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-            refresh_token: refreshToken,
-          })
-          localStorage.setItem('access_token', response.data.access_token)
-          originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`
-          return api(originalRequest)
-        } catch {
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
-        }
-      }
-    }
-    return Promise.reject(error)
-  }
-)
+interface RegisterResponse {
+  message: string
+  email: string
+}
 
 export const authApi = {
-  login: (email: string, password: string) => {
-    return api.post('/auth/login', { email, password })
+  login: async (email: string, password: string): Promise<LoginResponse> => {
+    const response = await api.post('/auth/login', { email, password })
+    const data = extractData<LoginResponse>(response)
+    if (data) {
+      // 保存 token
+      localStorage.setItem('access_token', data.access_token)
+    }
+    return data as LoginResponse
   },
 
-  register: (email: string, password: string, name: string) => {
-    return api.post('/auth/register', { email, password, name })
+  register: async (email: string, password: string, name: string): Promise<RegisterResponse> => {
+    const response = await api.post('/auth/register', { email, password, name })
+    return extractData<RegisterResponse>(response) as RegisterResponse
   },
 
-  getCurrentUser: () => {
-    return api.get('/auth/me')
+  getCurrentUser: async (): Promise<User> => {
+    const response = await api.get('/auth/me')
+    return extractData<User>(response) as User
   },
 
-  logout: () => {
-    return api.post('/auth/logout')
+  verifyToken: async (): Promise<{ valid: boolean; user_id: number; email: string }> => {
+    const response = await api.get('/auth/verify-token')
+    return extractData(response) as { valid: boolean; user_id: number; email: string }
+  },
+
+  logout: async (): Promise<void> => {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    await api.post('/auth/logout')
   },
 }
 
-export default api
+export default authApi

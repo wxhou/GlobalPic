@@ -26,8 +26,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem('access_token')
     if (token) {
       authApi.getCurrentUser()
-        .then(response => {
-          setUser(response.data)
+        .then(user => {
+          if (user) {
+            setUser(user)
+          }
         })
         .catch(() => {
           localStorage.removeItem('access_token')
@@ -43,16 +45,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const response = await authApi.login(email, password)
-    localStorage.setItem('access_token', response.data.access_token)
-    localStorage.setItem('refresh_token', response.data.refresh_token)
-    setUser(response.data.user)
+    if (response) {
+      localStorage.setItem('access_token', response.access_token)
+      localStorage.setItem('refresh_token', response.refresh_token || '')
+      setUser(response.user)
+    }
   }
 
   const register = async (email: string, password: string, name: string) => {
     const response = await authApi.register(email, password, name)
-    localStorage.setItem('access_token', response.data.access_token)
-    localStorage.setItem('refresh_token', response.data.refresh_token)
-    setUser(response.data.user)
+    if (response && 'access_token' in response) {
+      localStorage.setItem('access_token', (response as { access_token: string }).access_token)
+      localStorage.setItem('refresh_token', (response as { refresh_token?: string }).refresh_token || '')
+    }
   }
 
   const logout = () => {

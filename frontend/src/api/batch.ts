@@ -1,4 +1,5 @@
-import api from './auth'
+import api, { extractData } from './index'
+import { UnifiedResponse } from './types'
 
 // 批量处理相关API
 
@@ -48,35 +49,52 @@ export interface BatchDownloadPackage {
   file_count: number
 }
 
+export interface BatchCreateResponse {
+  success: boolean
+  task_id: string
+  status: string
+  total_images: number
+  estimated_time: number
+}
+
 export const batchApi = {
   // 创建批量处理任务
-  create: (data: BatchCreateRequest) => {
-    return api.post('/batch/create', data)
+  create: async (data: BatchCreateRequest): Promise<BatchCreateResponse> => {
+    const response = await api.post<UnifiedResponse<BatchCreateResponse>>('/batch/create', data)
+    return extractData<BatchCreateResponse>(response) as BatchCreateResponse
   },
 
-  // 获取任务状态 (使用 query 参数)
-  getStatus: (taskId: string): Promise<{ data: BatchTaskStatus }> => {
-    return api.get('/batch/status', { params: { task_id: taskId } })
+  // 获取任务状态
+  getStatus: async (taskId: string): Promise<BatchTaskStatus> => {
+    const response = await api.get<UnifiedResponse<BatchTaskStatus>>('/batch/status', {
+      params: { task_id: taskId },
+    })
+    return extractData<BatchTaskStatus>(response) as BatchTaskStatus
   },
 
-  // 获取任务结果 (使用 query 参数)
-  getResults: (taskId: string): Promise<{ data: BatchResult }> => {
-    return api.get('/batch/results', { params: { task_id: taskId } })
+  // 获取任务结果
+  getResults: async (taskId: string): Promise<BatchResult> => {
+    const response = await api.get<UnifiedResponse<BatchResult>>('/batch/results', {
+      params: { task_id: taskId },
+    })
+    return extractData<BatchResult>(response) as BatchResult
   },
 
-  // 下载结果ZIP包 (使用 query 参数)
-  download: (taskId: string): Promise<{ data: BatchDownloadPackage }> => {
-    return api.get('/batch/download', { params: { task_id: taskId } })
-  },
-
-  // 取消任务 (使用 POST + body)
-  cancel: (taskId: string) => {
-    return api.post('/batch/cancel', { task_id: taskId })
+  // 取消任务
+  cancel: async (taskId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post<UnifiedResponse<{ success: boolean; message: string }>>(
+      '/batch/cancel',
+      { task_id: taskId }
+    )
+    return extractData(response) as { success: boolean; message: string }
   },
 
   // 获取批量处理器状态
-  getProcessorStatus: () => {
-    return api.get('/batch/processor-status')
+  getProcessorStatus: async (): Promise<Record<string, unknown>> => {
+    const response = await api.get<UnifiedResponse<Record<string, unknown>>>(
+      '/batch/processor-status'
+    )
+    return extractData(response) as Record<string, unknown>
   },
 }
 

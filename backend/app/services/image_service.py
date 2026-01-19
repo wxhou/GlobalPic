@@ -1,5 +1,10 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc
+"""
+图像服务 - 处理图像相关业务逻辑（异步版本）
+
+使用 SQLAlchemy AsyncSession 进行异步数据库操作
+"""
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, desc, select, func, delete
 from typing import List, Tuple, Optional
 from datetime import datetime, timedelta
 import json
@@ -8,13 +13,14 @@ from app.models.image import Image, ProcessingJob
 from app.models.user import User
 from app.schemas.image import ImageStatus, ProcessingStatus, OperationType
 
+
 class ImageService:
     """图像服务 - 处理图像相关业务逻辑"""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
-    def create_image_record(
+    async def create_image_record(
         self,
         user_id: int,
         original_filename: str,
@@ -47,17 +53,17 @@ class ImageService:
             storage_url=storage_url,
             storage_provider=storage_provider,
             is_processed=False,
-            processing_status=ImageStatus.PENDING,
+            processing_status=ImageStatus.PENDING.value,
             tags=json.dumps(tags) if tags else None
         )
         
         self.db.add(image)
-        self.db.commit()
-        self.db.refresh(image)
+        await self.db.commit()
+        await self.db.refresh(image)
         
         return image
     
-    def get_user_images(
+    async def get_user_images(
         self,
         user_id: int,
         page: int = 1,
@@ -66,57 +72,61 @@ class ImageService:
         """获取用户图像列表"""
         
         # 查询总数
-        total = self.db.query(Image).filter(Image.user_id == user_id).count()
+        total_result = await self.db.execute(
+            select(func.count(Image.id)).where(Image.user_id == user_id)
+        )
+        total = total_result.scalar_one()
         
         # 分页查询
         offset = (page - 1) * per_page
-        images = (
-            self.db.query(Image)
-            .filter(Image.user_id == user_id)
+        result = await self.db.execute(
+            select(Image)
+            .where(Image.user_id == user_id)
             .order_by(desc(Image.created_at))
             .offset(offset)
             .limit(per_page)
-            .all()
         )
+        images = result.scalars().all()
         
-        return images, total
+        return list(images), total
     
-    def get_image_by_id(self, image_id: int, user_id: int) -> Optional[Image]:
+    async def get_image_by_id(self, image_id: int, user_id: int) -> Optional[Image]:
         """根据ID获取图像"""
         
-        return (
-            self.db.query(Image)
-            .filter(and_(Image.id == image_id, Image.user_id == user_id))
-            .first()
+        result = await self.db.execute(
+            select(Image).where(and_(Image.id == image_id, Image.user_id == user_id))
         )
+        return result.scalar_one_or_none()
     
-    def delete_image(self, image_id: int, user_id: int) -> bool:
+    async def delete_image(self, image_id: int, user_id: int) -> bool:
         """删除图像"""
         
-        image = self.get_image_by_id(image_id, user_id)
+        image = await self.get_image_by_id(image_id, user_id)
         if not image:
             return False
         
         # 删除相关处理任务
-        self.db.query(ProcessingJob).filter(ProcessingJob.image_id == image_id).delete()
+        await self.db.execute(
+            delete(ProcessingJob).where(ProcessingJob.image_id == image_id)
+        )
         
         # 删除图像记录
-        self.db.delete(image)
-        self.db.commit()
+        await self.db.delete(image)
+        await self.db.commit()
         
         return True
     
-    def create_processing_job(
+    async def create_processing_job(
         self,
         image_id: int,
         user_id: int,
-        operation_type: OperationType,
+        operation_type: str,
         parameters: Optional[dict] = None
     ) -> ProcessingJob:
         """创建处理任务"""
         
         # 验证图像是否存在且属于当前用户
-        image = self.get_image_by_id(image_id, user_id)
+        image = await self.get_image_by_id(image_id, user_id)
         if not image:
             raise ValueError("图像不存在或无权限访问")
         
@@ -124,35 +134,36 @@ class ImageService:
         job = ProcessingJob(
             image_id=image_id,
             user_id=user_id,
-            operation_type=operation_type.value,
+            operation_type=operation_type,
             parameters=json.dumps(parameters) if parameters else None,
-            status=ProcessingStatus.PENDING,
+            status=ProcessingStatus.PENDING.value,
             progress=0
         )
         
         self.db.add(job)
-        self.db.commit()
-        self.db.refresh(job)
+        await self.db.commit()
+        await self.db.refresh(job)
         
         # 更新图像处理状态
-        image.processing_status = ImageStatus.PENDING
-        self.db.commit()
+        image.processing_status = ImageStatus.PENDING.value
+        await self.db.commit()
         
         return job
     
-    def get_processing_job_by_id(self, job_id: int, user_id: int) -> Optional[ProcessingJob]:
+    async def get_processing_job_by_id(self, job_id: int, user_id: int) -> Optional[ProcessingJob]:
         """根据ID获取处理任务"""
         
-        return (
-            self.db.query(ProcessingJob)
-            .filter(and_(ProcessingJob.id == job_id, ProcessingJob.user_id == user_id))
-            .first()
+        result = await self.db.execute(
+            select(ProcessingJob).where(
+                and_(ProcessingJob.id == job_id, ProcessingJob.user_id == user_id)
+            )
         )
+        return result.scalar_one_or_none()
     
-    def update_processing_job_status(
+    async def update_processing_job_status(
         self,
         job_id: int,
-        status: ProcessingStatus,
+        status: str,
         progress: Optional[int] = None,
         result_path: Optional[str] = None,
         result_urls: Optional[List[str]] = None,
@@ -160,7 +171,10 @@ class ImageService:
     ) -> bool:
         """更新处理任务状态"""
         
-        job = self.db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
+        result = await self.db.execute(
+            select(ProcessingJob).where(ProcessingJob.id == job_id)
+        )
+        job = result.scalar_one_or_none()
         if not job:
             return False
         
@@ -179,83 +193,93 @@ class ImageService:
             job.error_message = error_message
         
         # 设置时间戳
-        if status == ProcessingStatus.PROCESSING and not job.started_at:
+        if status == ProcessingStatus.PROCESSING.value and not job.started_at:
             job.started_at = datetime.utcnow()
-        elif status in [ProcessingStatus.COMPLETED, ProcessingStatus.FAILED]:
+        elif status in [ProcessingStatus.COMPLETED.value, ProcessingStatus.FAILED.value]:
             job.completed_at = datetime.utcnow()
         
-        self.db.commit()
+        await self.db.commit()
         
         # 如果任务完成，更新图像状态
-        if status == ProcessingStatus.COMPLETED:
-            image = self.db.query(Image).filter(Image.id == job.image_id).first()
+        if status == ProcessingStatus.COMPLETED.value:
+            img_result = await self.db.execute(
+                select(Image).where(Image.id == job.image_id)
+            )
+            image = img_result.scalar_one_or_none()
             if image:
                 image.is_processed = True
-                image.processing_status = ImageStatus.COMPLETED
+                image.processing_status = ImageStatus.COMPLETED.value
                 image.processed_at = datetime.utcnow()
-                self.db.commit()
-        elif status == ProcessingStatus.FAILED:
-            image = self.db.query(Image).filter(Image.id == job.image_id).first()
+                await self.db.commit()
+        elif status == ProcessingStatus.FAILED.value:
+            img_result = await self.db.execute(
+                select(Image).where(Image.id == job.image_id)
+            )
+            image = img_result.scalar_one_or_none()
             if image:
-                image.processing_status = ImageStatus.FAILED
+                image.processing_status = ImageStatus.FAILED.value
                 image.error_message = error_message
-                self.db.commit()
+                await self.db.commit()
         
         return True
     
-    def get_user_processing_jobs(
+    async def get_user_processing_jobs(
         self,
         user_id: int,
-        status: Optional[ProcessingStatus] = None,
+        status: Optional[str] = None,
         page: int = 1,
         per_page: int = 20
     ) -> Tuple[List[ProcessingJob], int]:
         """获取用户处理任务列表"""
         
-        query = self.db.query(ProcessingJob).filter(ProcessingJob.user_id == user_id)
+        query = select(ProcessingJob).where(ProcessingJob.user_id == user_id)
         
         if status:
-            query = query.filter(ProcessingJob.status == status)
+            query = query.where(ProcessingJob.status == status)
         
         # 查询总数
-        total = query.count()
+        count_result = await self.db.execute(
+            select(func.count(ProcessingJob.id)).select_from(query.subquery())
+        )
+        total = count_result.scalar_one()
         
         # 分页查询
         offset = (page - 1) * per_page
-        jobs = (
+        result = await self.db.execute(
             query.order_by(desc(ProcessingJob.created_at))
             .offset(offset)
             .limit(per_page)
-            .all()
         )
+        jobs = result.scalars().all()
         
-        return jobs, total
+        return list(jobs), total
     
-    def cleanup_old_images(self, days: int = 30) -> int:
+    async def cleanup_old_images(self, days: int = 30) -> int:
         """清理旧的未处理图像"""
         
         cutoff_date = datetime.utcnow() - timedelta(days=days)
         
         # 查找旧的未处理图像
-        old_images = (
-            self.db.query(Image)
-            .filter(
+        result = await self.db.execute(
+            select(Image).where(
                 and_(
                     Image.created_at < cutoff_date,
                     Image.is_processed == False
                 )
             )
-            .all()
         )
+        old_images = result.scalars().all()
         
         deleted_count = 0
         for image in old_images:
             # 删除相关处理任务
-            self.db.query(ProcessingJob).filter(ProcessingJob.image_id == image.id).delete()
+            await self.db.execute(
+                delete(ProcessingJob).where(ProcessingJob.image_id == image.id)
+            )
             
             # 删除图像记录
-            self.db.delete(image)
+            await self.db.delete(image)
             deleted_count += 1
         
-        self.db.commit()
+        await self.db.commit()
         return deleted_count

@@ -53,7 +53,8 @@ export default function ResultDisplay({
           url: url
         })
       } catch (err) {
-        console.log('Share cancelled')
+        // 用户取消分享操作，这是正常行为
+        console.debug('用户取消了分享操作')
       }
     } else {
       navigator.clipboard.writeText(url)

@@ -64,7 +64,9 @@ export default function ImageUpload({
           return newFiles
         })
 
-        // Simulate upload progress
+        // 模拟上传进度 (实际应用中应使用真实的进度回调)
+        // TODO: 替换为实际的 API 上传逻辑，支持进度回调
+        // const response = await uploadApi.uploadWithProgress(file, (progress) => {...})
         for (let progress = 0; progress <= 100; progress += 10) {
           await new Promise(resolve => setTimeout(resolve, 100))
           setFiles(prev => {

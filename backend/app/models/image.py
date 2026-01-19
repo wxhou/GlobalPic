@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
 from datetime import datetime
 
-Base = declarative_base()
+# 使用共享的Base
+from app.core.database import Base
 
 class Image(Base):
     __tablename__ = "images"
@@ -43,12 +42,9 @@ class Image(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     processed_at = Column(DateTime(timezone=True), nullable=True)
     
-    # 关系
-    user = relationship("User", back_populates="images")
-    processing_jobs = relationship("ProcessingJob", back_populates="image")
-    
     def __repr__(self):
         return f"<Image(id={self.id}, filename='{self.filename}')>"
+
 
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
@@ -76,10 +72,6 @@ class ProcessingJob(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # 关系
-    image = relationship("Image", back_populates="processing_jobs")
-    user = relationship("User")
     
     def __repr__(self):
         return f"<ProcessingJob(id={self.id}, image_id={self.image_id}, status='{self.status}')>"

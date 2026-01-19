@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
+from app.core.response import ErrCode, error_response, success_response
 from app.models.user import User
 from app.services.payment_service import payment_service, api_key_service
 
@@ -57,32 +58,23 @@ class APIKeyCreateRequest(BaseModel):
     rate_limit: int = 100
 
 
-class APIKeyResponse(BaseModel):
-    """API密钥响应"""
-    api_key: str
-    key_id: str
-    name: str
-    rate_limit: int
-    ip_whitelist: List[str]
-
-
 class KeyIdRequest(BaseModel):
     """密钥ID请求"""
     key_id: str
 
 
-@router.get("/subscription/plans", response_model=List[PlanResponse])
+@router.get("/subscription/plans")
 async def get_subscription_plans():
     """获取订阅套餐列表"""
     plans = await payment_service.get_plans()
-    return plans
+    return success_response({"plans": plans})
 
 
-@router.get("/subscription/credits", response_model=List[CreditPackageResponse])
+@router.get("/subscription/credits")
 async def get_credit_packages():
     """获取按需付费套餐"""
     packages = await payment_service.get_credit_packages()
-    return packages
+    return success_response({"packages": packages})
 
 
 @router.post("/subscription/create-checkout")
@@ -92,10 +84,7 @@ async def create_subscription_checkout(
 ):
     """创建订阅Checkout会话"""
     if request.plan_id not in ["personal", "enterprise"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效的套餐ID"
-        )
+        return error_response(ErrCode.INVALID_REQUEST, custom_message="无效的套餐ID")
 
     result = await payment_service.create_checkout_session(
         user_id=current_user.id,
@@ -105,12 +94,9 @@ async def create_subscription_checkout(
     )
 
     if result["success"]:
-        return result
+        return success_response(result)
     else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.get("error", "创建Checkout失败")
-        )
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message=result.get("error", "创建Checkout失败"))
 
 
 @router.post("/subscription/create-credit-checkout")
@@ -120,10 +106,7 @@ async def create_credit_checkout(
 ):
     """创建额度购买Checkout会话"""
     if request.package_index < 0 or request.package_index > 2:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效的套餐索引"
-        )
+        return error_response(ErrCode.INVALID_REQUEST, custom_message="无效的套餐索引")
 
     result = await payment_service.create_credit_checkout(
         user_id=current_user.id,
@@ -132,21 +115,18 @@ async def create_credit_checkout(
     )
 
     if result["success"]:
-        return result
+        return success_response(result)
     else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.get("error", "创建Checkout失败")
-        )
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message=result.get("error", "创建Checkout失败"))
 
 
-@router.get("/subscription/status", response_model=SubscriptionStatusResponse)
+@router.get("/subscription/status")
 async def get_subscription_status(
     current_user: User = Depends(get_current_user)
 ):
     """获取当前订阅状态"""
     status_info = await payment_service.check_subscription_status(current_user.id)
-    return SubscriptionStatusResponse(**status_info)
+    return success_response(status_info)
 
 
 @router.post("/subscription/cancel")
@@ -155,7 +135,7 @@ async def cancel_subscription(
 ):
     """取消订阅"""
     result = await payment_service.cancel_subscription(current_user.id)
-    return result
+    return success_response(result)
 
 
 @router.post("/subscription/webhook")
@@ -163,19 +143,16 @@ async def handle_payment_webhook(request: Request):
     """处理支付Webhook"""
     signature = request.headers.get("stripe-signature")
     if not signature:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="缺少stripe-signature头"
-        )
+        return error_response(ErrCode.INVALID_REQUEST, custom_message="缺少stripe-signature头")
 
     payload = await request.body()
     result = await payment_service.handle_webhook(payload, signature)
 
-    return result
+    return success_response(result)
 
 
 # API密钥管理
-@router.post("/subscription/api-keys", response_model=APIKeyResponse)
+@router.post("/subscription/api-keys")
 async def create_api_key(
     request: APIKeyCreateRequest,
     current_user: User = Depends(get_current_user)
@@ -189,12 +166,15 @@ async def create_api_key(
     )
 
     if result["success"]:
-        return APIKeyResponse(**result)
+        return success_response({
+            "api_key": result.get("api_key"),
+            "key_id": result.get("key_id"),
+            "name": result.get("name"),
+            "rate_limit": result.get("rate_limit"),
+            "ip_whitelist": result.get("ip_whitelist", [])
+        })
     else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="创建API密钥失败"
-        )
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message="创建API密钥失败")
 
 
 @router.get("/subscription/api-keys")
@@ -203,7 +183,7 @@ async def list_api_keys(
 ):
     """获取当前用户的API密钥列表"""
     # TODO: 从数据库获取密钥列表
-    return {"keys": [], "message": "请前往设置页面管理API密钥"}
+    return success_response({"keys": [], "message": "请前往设置页面管理API密钥"})
 
 
 @router.post("/subscription/api-keys/revoke")
@@ -214,18 +194,15 @@ async def revoke_api_key(
     """撤销API密钥"""
     success = await api_key_service.revoke_api_key(request.key_id, current_user.id)
     if success:
-        return {"success": True, "message": "API密钥已撤销"}
+        return success_response({"success": True, "message": "API密钥已撤销"})
     else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="撤销API密钥失败"
-        )
+        return error_response(ErrCode.INTERNAL_ERROR, custom_message="撤销API密钥失败")
 
 
 @router.get("/subscription/payment/status")
 async def get_payment_service_status():
     """获取支付服务状态"""
-    return {
+    return success_response({
         "payment_service": payment_service.get_status(),
         "api_key_service": api_key_service.get_status(),
-    }
+    })

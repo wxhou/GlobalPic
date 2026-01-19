@@ -29,10 +29,11 @@ export default function CopywritingPanel({ imageDescription, onGenerate }: Copyw
   const handleGenerate = async () => {
     setIsGenerating(true)
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // TODO: 集成实际的 AI 文案生成 API
+    // const response = await copywritingApi.generate({...})
+    // setCopies(response.copywrites)
 
-    // Mock generated copy
+    // Mock generated copy (临时数据)
     const mockCopies: GeneratedCopy[] = [
       {
         title: '[Brand] Premium Product - Your Best Choice | Top Rated',

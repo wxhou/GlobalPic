@@ -79,8 +79,6 @@ export default function SubscriptionPlan({ currentPlan = 'free', onSelectPlan }:
     if (planId === currentPlan) return
 
     setLoading(planId)
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500))
 
     if (onSelectPlan) {
       onSelectPlan(planId)
@@ -90,7 +88,8 @@ export default function SubscriptionPlan({ currentPlan = 'free', onSelectPlan }:
 
   const handleBuyCredits = async (packageIndex: number) => {
     setLoading(`credit_${packageIndex}`)
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // TODO: 集成实际的 API 调用
+    console.debug('购买额度包:', packageIndex)
     setLoading(null)
   }
 

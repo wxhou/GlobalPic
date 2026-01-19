@@ -1,15 +1,13 @@
 # Models module
 from .user import User
 from .image import Image, ProcessingJob
-from .subscription import Subscription, Payment, APIKey, APIUsageRecord, UsageRecord
+from .subscription import Subscription, CreditTransaction, APIKey
 
 __all__ = [
     "User",
     "Image",
     "ProcessingJob",
     "Subscription",
-    "Payment",
+    "CreditTransaction",
     "APIKey",
-    "APIUsageRecord",
-    "UsageRecord",
 ]

@@ -162,8 +162,10 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
         } else if (status.status === 'failed') {
           throw new Error('批量处理任务失败')
         }
-      } catch {
-        // 继续轮询
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : '轮询状态失败'
+        console.error('轮询任务状态错误:', err)
+        // 继续轮询，记录错误但不中断
       }
 
       attempts++
@@ -187,8 +189,10 @@ export default function BatchProcessor({ onProcess }: BatchProcessorProps) {
       link.href = response.data.download_url
       link.download = `batch_${taskId}.zip`
       link.click()
-    } catch {
-      setError('下载失败，请稍后重试')
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '下载失败，请稍后重试'
+      console.error('下载错误:', err)
+      setError(errorMessage)
     }
   }
 

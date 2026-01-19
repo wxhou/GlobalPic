@@ -1,8 +1,11 @@
 import os
 import aiofiles
 import uuid
+import logging
 from typing import Dict, Any
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class StorageService:
     """存储服务 - 支持本地存储和云存储"""
@@ -98,7 +101,7 @@ class StorageService:
                     os.remove(file_path)
                 return True
             except Exception as e:
-                print(f"删除文件失败: {e}")
+                logger.error(f"删除文件失败: {e}")
                 return False
         else:
             # TODO: 实现云存储删除逻辑

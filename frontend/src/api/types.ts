@@ -1,5 +1,54 @@
 // API类型定义
 
+// ============ 统一响应格式 ============
+
+/**
+ * 统一API响应格式
+ * 所有接口都返回此格式：
+ * {"errcode": 0, "errmsg": "success", "data": {...}}
+ */
+export interface UnifiedResponse<T = unknown> {
+  errcode: number  // 0表示成功，非0表示错误
+  errmsg: string  // 错误消息，成功时为"success"
+  data?: T        // 响应数据
+}
+
+// ============ 错误码定义 ============
+
+export enum ErrCode {
+  SUCCESS = 0,
+  
+  // 通用错误 1xxx
+  INVALID_REQUEST = 1001,
+  NOT_FOUND = 1002,
+  PERMISSION_DENIED = 1003,
+  RATE_LIMITED = 1004,
+  VALIDATION_ERROR = 1005,
+  
+  // 认证错误 2xxx
+  UNAUTHORIZED = 2001,
+  TOKEN_INVALID = 2002,
+  TOKEN_EXPIRED = 2003,
+  USER_NOT_VERIFIED = 2004,
+  INCORRECT_PASSWORD = 2005,
+  EMAIL_NOT_REGISTERED = 2006,
+  EMAIL_ALREADY_EXISTS = 2007,
+  
+  // 业务错误 3xxx
+  FILE_TOO_LARGE = 3001,
+  INVALID_FILE_FORMAT = 3002,
+  IMAGE_NOT_FOUND = 3003,
+  PROCESSING_FAILED = 3004,
+  INSUFFICIENT_CREDITS = 3005,
+  BATCH_LIMIT_EXCEEDED = 3006,
+  OPERATION_NOT_ALLOWED = 3007,
+  
+  // 系统错误 4xxx
+  INTERNAL_ERROR = 4001,
+  DATABASE_ERROR = 4002,
+  EXTERNAL_SERVICE_ERROR = 4003,
+}
+
 // ============ 图片处理类型 ============
 
 export interface ImageProcessingRequest {
@@ -14,6 +63,7 @@ export interface ImageProcessingResponse {
   result?: {
     output_urls: string[]
     quality_score: number
+    // 允许额外的属性，但提供类型安全的访问方式
     [key: string]: unknown
   }
   error?: string
@@ -182,6 +232,7 @@ export interface AuthTokens {
 // ============ 错误类型 ============
 
 export interface APIError {
-  detail: string
-  code?: string
+  errcode: number
+  errmsg: string
+  data?: unknown
 }

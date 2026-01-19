@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -10,11 +10,11 @@ class UserCreate(UserBase):
     password: str
     confirm_password: str
     
-    @field_validator('confirm_password')
-    def passwords_match(cls, v, values):
-        if 'password' in values and v != values['password']:
+    @model_validator(mode='after')
+    def passwords_match(self):
+        if self.password != self.confirm_password:
             raise ValueError('密码确认不匹配')
-        return v
+        return self
     
     @field_validator('password')
     def validate_password(cls, v):
@@ -67,11 +67,11 @@ class PasswordResetConfirm(BaseModel):
     new_password: str
     confirm_password: str
     
-    @field_validator('confirm_password')
-    def passwords_match(cls, v, values):
-        if 'new_password' in values and v != values['new_password']:
+    @model_validator(mode='after')
+    def passwords_match(self):
+        if self.new_password != self.confirm_password:
             raise ValueError('密码确认不匹配')
-        return v
+        return self
 
 class EmailVerification(BaseModel):
     token: str

@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
 
-Base = declarative_base()
+# 使用共享的Base
+from app.core.database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -19,10 +18,6 @@ class User(Base):
     verification_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # 关系
-    images = relationship("Image", back_populates="user")
-    subscription = relationship("Subscription", back_populates="user", uselist=False)
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}')>"
